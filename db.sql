@@ -19,29 +19,83 @@
 CREATE DATABASE IF NOT EXISTS `octonorm_round` /*!40100 DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci */ /*!80016 DEFAULT ENCRYPTION='N' */;
 USE `octonorm_round`;
 
--- Dumping structure for table octonorm_round.setup_panel
-CREATE TABLE IF NOT EXISTS `setup_panel` (
+-- Dumping structure for table octonorm_round.participants
+CREATE TABLE IF NOT EXISTS `participants` (
   `id` int NOT NULL AUTO_INCREMENT,
-  `manpower_count` int NOT NULL,
-  `role_holder_categories` int NOT NULL,
-  `count_per_category` int NOT NULL,
-  `preparation_stage` enum('Y','N') DEFAULT 'N',
-  `preparation_booths` int DEFAULT '0',
-  `preparation_time_per_case` int DEFAULT '0',
-  `preparation_rounds` int DEFAULT '0',
-  `preparation_autoclose` enum('Y','N') DEFAULT 'N',
-  `no_of_evaluations` int NOT NULL,
-  `rounds` int NOT NULL,
-  `no_of_evaluators` int NOT NULL,
-  `evaluator_participant_mapping` enum('Y','N') DEFAULT 'N',
-  `time_per_evaluation_round` int DEFAULT '0',
-  `reminder` enum('Y','N') DEFAULT 'N',
-  `reminder_count` int DEFAULT '0',
-  `auto_submit` enum('Y','N') DEFAULT 'N',
+  `name` varchar(100) NOT NULL,
+  `email` varchar(100) DEFAULT NULL,
+  `role_id` int DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `role_id` (`role_id`),
+  CONSTRAINT `participants_ibfk_1` FOREIGN KEY (`role_id`) REFERENCES `roles` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- Data exporting was unselected.
+
+-- Dumping structure for table octonorm_round.roles
+CREATE TABLE IF NOT EXISTS `roles` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `name` varchar(50) NOT NULL,
+  `count` int DEFAULT '0',
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `name` (`name`)
+) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- Data exporting was unselected.
+
+-- Dumping structure for table octonorm_round.setup_config
+CREATE TABLE IF NOT EXISTS `setup_config` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `preparation_enabled` tinyint(1) DEFAULT '1',
+  `preparation_booths` int DEFAULT '5',
+  `preparation_time` int DEFAULT '5',
+  `auto_close_prep` tinyint(1) DEFAULT '1',
+  `evaluation_rounds` int DEFAULT '2',
+  `evaluator_count` int DEFAULT '5',
+  `mapping_enabled` tinyint(1) DEFAULT '1',
+  `evaluation_time` int DEFAULT '10',
+  `reminder_enabled` tinyint(1) DEFAULT '1',
+  `reminder_count` int DEFAULT '3',
+  `auto_submit` tinyint(1) DEFAULT '1',
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- Data exporting was unselected.
+
+-- Dumping structure for table octonorm_round.trainer_mappings
+CREATE TABLE IF NOT EXISTS `trainer_mappings` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `setup_id` int DEFAULT NULL,
+  `trainer_id` int DEFAULT NULL,
+  `participant_id` int DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `unique_mapping` (`setup_id`,`trainer_id`,`participant_id`),
+  KEY `trainer_id` (`trainer_id`),
+  KEY `participant_id` (`participant_id`),
+  CONSTRAINT `trainer_mappings_ibfk_1` FOREIGN KEY (`setup_id`) REFERENCES `setup_config` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `trainer_mappings_ibfk_2` FOREIGN KEY (`trainer_id`) REFERENCES `trainers` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `trainer_mappings_ibfk_3` FOREIGN KEY (`participant_id`) REFERENCES `participants` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- Data exporting was unselected.
+
+-- Dumping structure for table octonorm_round.trainers
+CREATE TABLE IF NOT EXISTS `trainers` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `name` varchar(100) NOT NULL,
+  `email` varchar(100) DEFAULT NULL,
+  `specialization` varchar(100) DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 -- Data exporting was unselected.
 
