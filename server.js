@@ -91,6 +91,38 @@ app.get('/api/setup', async (req, res) => {
     }
 });
 
+// PUT /api/participants/order – update room and position for multiple participants
+app.put('/api/participants/order', async (req, res) => {
+    const { setup_id, rooms } = req.body;
+    if (!setup_id || !rooms) {
+        return res.status(400).json({ success: false, message: 'Missing setup_id or rooms' });
+    }
+
+    const connection = await pool.getConnection();
+    try {
+        await connection.beginTransaction();
+
+        // rooms: { roomId: [participantId1, participantId2, ...] }
+        for (const [roomId, participantIds] of Object.entries(rooms)) {
+            for (let i = 0; i < participantIds.length; i++) {
+                await connection.query(
+                    'UPDATE participants SET room_id = ?, position = ? WHERE id = ? AND setup_id = ?',
+                    [roomId, i, participantIds[i], setup_id]
+                );
+            }
+        }
+
+        await connection.commit();
+        connection.release();
+        res.json({ success: true, message: 'Order updated successfully' });
+    } catch (error) {
+        await connection.rollback();
+        connection.release();
+        console.error('Error updating order:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
 // Start server
 app.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`);
