@@ -1,6 +1,5 @@
 const { pool } = require('../../config/db');
 
-// GET /api/setup
 exports.getSetup = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -31,7 +30,7 @@ exports.getSetup = async (req, res) => {
       if (rows.length === 0) {
         return res.json({
           success: true,
-          data: { setup: null, trainers: [], rooms: [], participants: [], rounds: [], permissions },
+          data: { setup: null, trainers: [], rooms: [], participants: [], rounds: [], timeSlots: [], permissions },
         });
       }
       setupId = rows[0].id;
@@ -39,7 +38,11 @@ exports.getSetup = async (req, res) => {
 
     const [setupRows] = await pool.query('SELECT * FROM setup WHERE id = ?', [setupId]);
     const [trainers] = await pool.query('SELECT * FROM trainers ORDER BY id');
-    const [rooms] = await pool.query('SELECT * FROM rooms WHERE setup_id = ? ORDER BY id', [setupId]);
+    // ✅ Include trainer_id in rooms so frontend can show, but not required for order update
+    const [rooms] = await pool.query(
+      'SELECT id, name, vehicle_name, trainer_id FROM rooms WHERE setup_id = ? ORDER BY id',
+      [setupId]
+    );
 
     let participantsQuery = `
       SELECT 
@@ -61,6 +64,7 @@ exports.getSetup = async (req, res) => {
 
     const [participants] = await pool.query(participantsQuery, queryParams);
     const [rounds] = await pool.query('SELECT * FROM rounds WHERE setup_id = ? ORDER BY id', [setupId]);
+    const [timeSlots] = await pool.query('SELECT * FROM time_slots ORDER BY id');
 
     res.json({
       success: true,
@@ -70,6 +74,7 @@ exports.getSetup = async (req, res) => {
         rooms,
         participants,
         rounds,
+        timeSlots,
         permissions,
       },
     });
@@ -79,9 +84,12 @@ exports.getSetup = async (req, res) => {
   }
 };
 
-// PUT /api/participants/order
+// ----------------------------------------------------------------
+// ✅ SIMPLIFIED updateOrder – auto‑assigns trainer from room
+// ----------------------------------------------------------------
 exports.updateOrder = async (req, res) => {
-  const { setup_id, rooms } = req.body;
+  const { setup_id, rooms } = req.body;   // No trainerUpdates
+
   if (!setup_id || !rooms) {
     return res.status(400).json({ success: false, message: 'Missing setup_id or rooms' });
   }
@@ -91,10 +99,17 @@ exports.updateOrder = async (req, res) => {
     await connection.beginTransaction();
 
     for (const [roomId, participantIds] of Object.entries(rooms)) {
+      // Fetch the default trainer for this room
+      const [roomRows] = await connection.query(
+        'SELECT trainer_id FROM rooms WHERE id = ?',
+        [roomId]
+      );
+      const trainerId = roomRows.length ? roomRows[0].trainer_id : null;
+
       for (let i = 0; i < participantIds.length; i++) {
         await connection.query(
-          'UPDATE participants SET room_id = ?, position = ? WHERE id = ? AND setup_id = ?',
-          [roomId, i, participantIds[i], setup_id]
+          'UPDATE participants SET room_id = ?, position = ?, trainer_id = ? WHERE id = ? AND setup_id = ?',
+          [roomId, i, trainerId, participantIds[i], setup_id]
         );
       }
     }
