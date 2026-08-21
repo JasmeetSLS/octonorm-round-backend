@@ -38,21 +38,23 @@ exports.getSetup = async (req, res) => {
 
     const [setupRows] = await pool.query('SELECT * FROM setup WHERE id = ?', [setupId]);
     const [trainers] = await pool.query('SELECT * FROM trainers ORDER BY id');
-    // ✅ Include trainer_id in rooms so frontend can show, but not required for order update
     const [rooms] = await pool.query(
       'SELECT id, name, vehicle_name, trainer_id FROM rooms WHERE setup_id = ? ORDER BY id',
       [setupId]
     );
 
+    // ✅ Include time slot time for each participant
     let participantsQuery = `
       SELECT 
         p.*,
         t.name AS trainer_name,
         r.name AS room_name,
-        r.vehicle_name
+        r.vehicle_name,
+        ts.time AS time_slot_time
       FROM participants p
       LEFT JOIN trainers t ON p.trainer_id = t.id
       LEFT JOIN rooms r ON p.room_id = r.id
+      LEFT JOIN time_slots ts ON p.time_slot_id = ts.id
       WHERE p.setup_id = ?
     `;
     const queryParams = [setupId];
@@ -88,7 +90,7 @@ exports.getSetup = async (req, res) => {
 // ✅ SIMPLIFIED updateOrder – auto‑assigns trainer from room
 // ----------------------------------------------------------------
 exports.updateOrder = async (req, res) => {
-  const { setup_id, rooms } = req.body;   // No trainerUpdates
+  const { setup_id, rooms } = req.body;
 
   if (!setup_id || !rooms) {
     return res.status(400).json({ success: false, message: 'Missing setup_id or rooms' });
@@ -97,6 +99,9 @@ exports.updateOrder = async (req, res) => {
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();
+
+    // 1. Fetch all time slots (ordered by id, same as frontend)
+    const [timeSlots] = await connection.query('SELECT id FROM time_slots ORDER BY id');
 
     for (const [roomId, participantIds] of Object.entries(rooms)) {
       // Fetch the default trainer for this room
@@ -107,9 +112,14 @@ exports.updateOrder = async (req, res) => {
       const trainerId = roomRows.length ? roomRows[0].trainer_id : null;
 
       for (let i = 0; i < participantIds.length; i++) {
+        // Determine time_slot_id based on position (i)
+        const timeSlotId = (i < timeSlots.length) ? timeSlots[i].id : null;
+
         await connection.query(
-          'UPDATE participants SET room_id = ?, position = ?, trainer_id = ? WHERE id = ? AND setup_id = ?',
-          [roomId, i, trainerId, participantIds[i], setup_id]
+          `UPDATE participants 
+           SET room_id = ?, position = ?, trainer_id = ?, time_slot_id = ? 
+           WHERE id = ? AND setup_id = ?`,
+          [roomId, i, trainerId, timeSlotId, participantIds[i], setup_id]
         );
       }
     }
