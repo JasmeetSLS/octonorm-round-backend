@@ -43,14 +43,15 @@ exports.getSetup = async (req, res) => {
       [setupId]
     );
 
-    // ✅ Include time slot time for each participant
+    // ── Participants: include current_stage ──
     let participantsQuery = `
       SELECT 
         p.*,
         t.name AS trainer_name,
         r.name AS room_name,
         r.vehicle_name,
-        ts.time AS time_slot_time
+        ts.time AS time_slot_time,
+        p.current_stage
       FROM participants p
       LEFT JOIN trainers t ON p.trainer_id = t.id
       LEFT JOIN rooms r ON p.room_id = r.id
@@ -65,6 +66,30 @@ exports.getSetup = async (req, res) => {
     participantsQuery += ' ORDER BY p.room_id, p.position';
 
     const [participants] = await pool.query(participantsQuery, queryParams);
+
+    // ── Fetch assigned rounds for each participant ──
+    if (participants.length) {
+      const participantIds = participants.map(p => p.id);
+      const [roundsData] = await pool.query(
+        `SELECT participant_id, round_id FROM participant_rounds 
+         WHERE participant_id IN (?)`,
+        [participantIds]
+      );
+
+      // Group by participant_id
+      const roundsMap = {};
+      roundsData.forEach(pr => {
+        if (!roundsMap[pr.participant_id]) roundsMap[pr.participant_id] = [];
+        roundsMap[pr.participant_id].push(pr.round_id);
+      });
+
+      // Attach to each participant
+      participants.forEach(p => {
+        p.current_stage = p.current_stage || 'main';
+        p.assigned_rounds = roundsMap[p.id] || [];
+      });
+    }
+
     const [rounds] = await pool.query('SELECT * FROM rounds WHERE setup_id = ? ORDER BY id', [setupId]);
     const [timeSlots] = await pool.query('SELECT * FROM time_slots ORDER BY id');
 
@@ -86,9 +111,7 @@ exports.getSetup = async (req, res) => {
   }
 };
 
-// ----------------------------------------------------------------
-// ✅ SIMPLIFIED updateOrder – auto‑assigns trainer from room
-// ----------------------------------------------------------------
+// ── updateOrder (unchanged) ──
 exports.updateOrder = async (req, res) => {
   const { setup_id, rooms } = req.body;
 
@@ -100,11 +123,9 @@ exports.updateOrder = async (req, res) => {
   try {
     await connection.beginTransaction();
 
-    // 1. Fetch all time slots (ordered by id, same as frontend)
     const [timeSlots] = await connection.query('SELECT id FROM time_slots ORDER BY id');
 
     for (const [roomId, participantIds] of Object.entries(rooms)) {
-      // Fetch the default trainer for this room
       const [roomRows] = await connection.query(
         'SELECT trainer_id FROM rooms WHERE id = ?',
         [roomId]
@@ -112,7 +133,6 @@ exports.updateOrder = async (req, res) => {
       const trainerId = roomRows.length ? roomRows[0].trainer_id : null;
 
       for (let i = 0; i < participantIds.length; i++) {
-        // Determine time_slot_id based on position (i)
         const timeSlotId = (i < timeSlots.length) ? timeSlots[i].id : null;
 
         await connection.query(
@@ -131,6 +151,21 @@ exports.updateOrder = async (req, res) => {
     await connection.rollback();
     connection.release();
     console.error('Error updating order:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// ── NEW: Advance participant to next stage ──
+exports.advanceParticipant = async (req, res) => {
+  const { participant_id, new_stage } = req.body;
+  try {
+    await pool.query(
+      'UPDATE participants SET current_stage = ? WHERE id = ?',
+      [new_stage, participant_id]
+    );
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error advancing participant:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
