@@ -24,6 +24,16 @@ connectDB();
 app.use('/api', authRoutes);     // POST /api/login
 app.use('/api', verifyToken, setupRoutes);    // GET /api/setup, PUT /api/participants/order
 
+// Test route
+app.get('/api', (req, res) => {
+    res.json({ 
+         status: 'OK', 
+        message: 'Server is running',
+        timestamp: new Date().toISOString()
+    });
+});
+
+
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
