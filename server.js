@@ -21,18 +21,20 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 connectDB();
 
 // Routes
-app.use('/api', authRoutes);     // POST /api/login
-app.use('/api', verifyToken, setupRoutes);    // GET /api/setup, PUT /api/participants/order
+// Routes
+app.use('/api', authRoutes); // POST /api/login
 
-// Test route
+// Public test route
 app.get('/api', (req, res) => {
-    res.json({ 
-         status: 'OK', 
+    res.json({
+        status: 'OK',
         message: 'Server is running',
         timestamp: new Date().toISOString()
     });
 });
 
+// Protected setup routes
+app.use('/api', verifyToken, setupRoutes);
 
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
