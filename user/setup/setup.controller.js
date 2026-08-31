@@ -1,42 +1,62 @@
 const { pool } = require('../../config/db');
 
+
 exports.getSetup = async (req, res) => {
   try {
     const userId = req.user.id;
-    // Only fetch role_id – trainer_id no longer exists
     const [user] = await pool.query('SELECT role_id FROM users WHERE id = ?', [userId]);
     if (!user.length) {
       return res.status(401).json({ success: false, message: 'User not found' });
     }
     const roleId = user[0].role_id;
-    // trainerId removed entirely
 
-    // Permissions (unchanged)
-    const [perms] = await pool.query(
-      'SELECT stage_key, can_view, can_move, can_edit_trainer FROM role_permissions WHERE role_id = ?',
-      [roleId]
-    );
-    const permissions = {};
-    perms.forEach(p => {
-      permissions[p.stage_key] = {
-        view: p.can_view === 1,
-        move: p.can_move === 1,
-        editTrainer: p.can_edit_trainer === 1,
-      };
-    });
-
+    // --- Determine setupId first ---
     let setupId = req.query.setup_id;
     if (!setupId) {
       const [rows] = await pool.query('SELECT id FROM setup ORDER BY id DESC LIMIT 1');
       if (rows.length === 0) {
+        // No setup exists -> return empty with default permissions
         return res.json({
           success: true,
-          data: { setup: null, trainers: [], rooms: [], participants: [], rounds: [], timeSlots: [], permissions },
+          data: {
+            setup: null,
+            trainers: [],
+            rooms: [],
+            participants: [],
+            rounds: [],
+            timeSlots: [],
+            permissions: { view: false, edit: false, delete: false }
+          }
         });
       }
       setupId = rows[0].id;
     }
 
+    // --- Fetch setup permissions (instead of stage permissions) ---
+    const [perms] = await pool.query(
+      `SELECT can_view, can_edit, can_delete 
+       FROM role_permissions 
+       WHERE role_id = ? AND (setup_id = ? OR setup_id IS NULL)
+       ORDER BY CASE WHEN setup_id IS NOT NULL THEN 1 ELSE 2 END
+       LIMIT 1`,
+      [roleId, setupId]
+    );
+
+    let permissions = { view: false, edit: false, delete: false };
+    if (perms.length) {
+      permissions = {
+        view: perms[0].can_view === 1,
+        edit: perms[0].can_edit === 1,
+        delete: perms[0].can_delete === 1,
+      };
+    }
+
+    // --- Enforce view permission ---
+    if (!permissions.view) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    // --- Rest of the code (unchanged) ---
     const [setupRows] = await pool.query('SELECT * FROM setup WHERE id = ?', [setupId]);
     const [trainers] = await pool.query('SELECT * FROM trainers ORDER BY id');
     const [rooms] = await pool.query(
@@ -44,8 +64,6 @@ exports.getSetup = async (req, res) => {
       [setupId]
     );
 
-    // ── Participants: include current_stage ──
-    // Removed the conditional filter by trainer_id
     let participantsQuery = `
       SELECT 
         p.*,
@@ -61,12 +79,8 @@ exports.getSetup = async (req, res) => {
       WHERE p.setup_id = ?
       ORDER BY p.room_id, p.position
     `;
-    const queryParams = [setupId];
-    // No extra condition – all participants are returned
+    const [participants] = await pool.query(participantsQuery, [setupId]);
 
-    const [participants] = await pool.query(participantsQuery, queryParams);
-
-    // ── Fetch assigned rounds for each participant (unchanged) ──
     if (participants.length) {
       const participantIds = participants.map(p => p.id);
       const [roundsData] = await pool.query(
@@ -74,13 +88,11 @@ exports.getSetup = async (req, res) => {
          WHERE participant_id IN (?)`,
         [participantIds]
       );
-
       const roundsMap = {};
       roundsData.forEach(pr => {
         if (!roundsMap[pr.participant_id]) roundsMap[pr.participant_id] = [];
         roundsMap[pr.participant_id].push(pr.round_id);
       });
-
       participants.forEach(p => {
         p.current_stage = p.current_stage || 'main';
         p.assigned_rounds = roundsMap[p.id] || [];
@@ -99,7 +111,7 @@ exports.getSetup = async (req, res) => {
         participants,
         rounds,
         timeSlots,
-        permissions,
+        permissions,   // now { view, edit, delete }
       },
     });
   } catch (error) {
