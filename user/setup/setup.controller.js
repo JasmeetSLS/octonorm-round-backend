@@ -3,14 +3,15 @@ const { pool } = require('../../config/db');
 exports.getSetup = async (req, res) => {
   try {
     const userId = req.user.id;
-    const [user] = await pool.query('SELECT role_id, trainer_id FROM users WHERE id = ?', [userId]);
+    // Only fetch role_id – trainer_id no longer exists
+    const [user] = await pool.query('SELECT role_id FROM users WHERE id = ?', [userId]);
     if (!user.length) {
       return res.status(401).json({ success: false, message: 'User not found' });
     }
     const roleId = user[0].role_id;
-    const trainerId = user[0].trainer_id;
+    // trainerId removed entirely
 
-    // Permissions
+    // Permissions (unchanged)
     const [perms] = await pool.query(
       'SELECT stage_key, can_view, can_move, can_edit_trainer FROM role_permissions WHERE role_id = ?',
       [roleId]
@@ -44,6 +45,7 @@ exports.getSetup = async (req, res) => {
     );
 
     // ── Participants: include current_stage ──
+    // Removed the conditional filter by trainer_id
     let participantsQuery = `
       SELECT 
         p.*,
@@ -57,17 +59,14 @@ exports.getSetup = async (req, res) => {
       LEFT JOIN rooms r ON p.room_id = r.id
       LEFT JOIN time_slots ts ON p.time_slot_id = ts.id
       WHERE p.setup_id = ?
+      ORDER BY p.room_id, p.position
     `;
     const queryParams = [setupId];
-    if (trainerId) {
-      participantsQuery += ' AND p.trainer_id = ?';
-      queryParams.push(trainerId);
-    }
-    participantsQuery += ' ORDER BY p.room_id, p.position';
+    // No extra condition – all participants are returned
 
     const [participants] = await pool.query(participantsQuery, queryParams);
 
-    // ── Fetch assigned rounds for each participant ──
+    // ── Fetch assigned rounds for each participant (unchanged) ──
     if (participants.length) {
       const participantIds = participants.map(p => p.id);
       const [roundsData] = await pool.query(
@@ -76,14 +75,12 @@ exports.getSetup = async (req, res) => {
         [participantIds]
       );
 
-      // Group by participant_id
       const roundsMap = {};
       roundsData.forEach(pr => {
         if (!roundsMap[pr.participant_id]) roundsMap[pr.participant_id] = [];
         roundsMap[pr.participant_id].push(pr.round_id);
       });
 
-      // Attach to each participant
       participants.forEach(p => {
         p.current_stage = p.current_stage || 'main';
         p.assigned_rounds = roundsMap[p.id] || [];
